@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use 5.30.0;
 use experimental qw(switch);
+use List::Util qw(min max);
 
 my @path=();
 my %index=();
@@ -39,9 +40,7 @@ foreach my $line (<STDIN>) {
   }
 }
 
-#debug
-my $sum=0;
-foreach(values(%index)) {
-  $sum+=$_ if $_ <= 100000;
-}
-say $sum;
+#debug;
+my $need=30000000-(70000000-$index{'root'});
+
+say min grep {$_ >= $need} values(%index);
