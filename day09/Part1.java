@@ -19,7 +19,7 @@ public class Part1 {
         }
 
         Point moveTo(Point target) {
-            Set<Move> path = this.pathTo(target);
+            Collection<Move> path = this.pathTo(target);
             var next = this;
             for (Move move : path) {
                 Point candidate = next.move(move);
@@ -28,20 +28,22 @@ public class Part1 {
             return next;
         }
 
-        private Set<Move> pathTo(Point target) {
-            int diag = this.x != target.x && this.y != target.y ? 0 : 1;
+        private Collection<Move> pathTo(Point target) {
+            if (Math.abs(target.x - this.x) == 1 && Math.abs(target.y - this.y) == 1) {
+                return List.of();
+            }
 
             Set<Move> moves = new HashSet<>(2);
-            if (this.x > target.x + diag) {
+            if (this.x > target.x) {
                 moves.add(Move.L);
             }
-            if (target.x > this.x + diag) {
+            if (target.x > this.x) {
                 moves.add(Move.R);
             }
-            if (this.y > target.y + diag) {
+            if (this.y > target.y) {
                 moves.add(Move.D);
             }
-            if (target.y > this.y + diag) {
+            if (target.y > this.y) {
                 moves.add(Move.U);
             }
             return moves;
@@ -77,7 +79,6 @@ public class Part1 {
                 tail = tail.moveTo(head);
                 passed.add(tail);
             }
-            System.getLogger("main").log(System.Logger.Level.INFO, "Result " + passed.size());
         }
 
         System.getLogger("main").log(System.Logger.Level.INFO, "Result " + passed.size());
