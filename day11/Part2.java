@@ -166,8 +166,6 @@ public class Part2 {
         if (isPrime) {
             primes.add(current);
         }
-        Map<Integer, String> a;
-        a.compute(1, (integer, s) -> )
         return current > limit
                 ? primes
                 : primes(limit, current + 1, primes);
