@@ -1,6 +1,7 @@
 import readline from 'readline';
 
-type code = [number | [code]];
+type code = number | code[];
+type Result = 'ok' | 'ko' | 'unknown' | 'error';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -8,23 +9,48 @@ const rl = readline.createInterface({
   terminal: false
 });
 
-let right: code | undefined = undefined;
+let left: code | undefined = undefined;
+let indice = 0;
+let goods: number[] = [0];
 
 rl.on('line', (line) => {
-    if (!right) {
-        right = eval(line);
+    if (!left) {
+        left = eval(line);
     } else {
-        const left = eval(line);
+        const right = eval(line);
+        indice += 1;
         const result = evaluate(left, right);
-        console.log('result', result);
-        right = undefined;
+        if (result == 'ok') {
+            goods.push(indice);
+        }
+        left = undefined;
     }
 });
 
 rl.once('close', () => {
-     // end of input
+     console.log('results', goods.reduce((a, b) => a + b))
  });
 
- function evaluate(left: code, right: code): boolean {
-    return true;
+ function evaluate(left: code, right: code): Result {
+    if (Array.isArray(left) && Array.isArray(right)) {
+        for (let i = 0; i < Math.min(left.length, right.length); i++) {
+            const r = evaluate(left?.[i], right[i]);
+            if (r !== 'unknown') {
+                return r;
+            }
+        }
+        return evaluate(left.length, right.length);
+    } else if (typeof left === 'number' && typeof right === 'number') {
+        if (left === right) {
+            return 'unknown';
+        } else {
+            const r = left < right ? 'ok' : 'ko';
+            return r;
+        }
+    } else if (typeof left == 'number') {
+        return evaluate([left], right);
+    } else if (typeof right == 'number') {
+        return evaluate(left, [right]);
+    }
+    return 'error';
  }
