@@ -8,6 +8,9 @@ import java.util.regex.Pattern
 import static java.lang.Math.*
 
 @CompileStatic
+record Sensor(long x, long y, long d) {}
+
+@CompileStatic
 static long manhatan(long x1, long y1, long x2, long y2) {
     return abs(x2 - x1) + abs(y2 - y1)
 }
@@ -34,27 +37,15 @@ class LandP2 {
     }
 }
 
-@CompileStatic
-static long coord(long x, long y) {
-    long validx = max(min(4_000_000, x), 0)
-    long validy = max(min(4_000_000, y), 0)
-    return validx * 4_000_000 + validy
-}
-
-@CompileStatic
-static List<Long> rcoord(long coord) {
-    long x = coord / 4_000_000L as long
-    long y = coord % 4_000_000L
-    return [x, y]
-}
+List<Sensor> sensors = []
 
 def startProg = Instant.now()
-def land = new LandP2()
 try (Scanner sc = new Scanner(new File('input'))) {
-    def coordPattern = Pattern.compile("Sensor at x=(\\d+), y=(\\d+): closest beacon is at x=(\\d+), y=(\\d+)")
+    def coordPattern = Pattern.compile("Sensor at x=(-?\\d+), y=(-?\\d+): closest beacon is at x=(-?\\d+), y=(-?\\d+)")
     int idxLine = 0
     while (sc.hasNextLine()) {
-        Matcher matcher = coordPattern.matcher(sc.nextLine())
+        String line = sc.nextLine()
+        Matcher matcher = coordPattern.matcher(line)
         if (matcher.find()) {
             long sx = Long.parseLong(matcher.group(1))
             long sy = Long.parseLong(matcher.group(2))
@@ -62,40 +53,45 @@ try (Scanner sc = new Scanner(new File('input'))) {
             long by = Long.parseLong(matcher.group(4))
 
             long d = manhatan(sx, sy, bx, by)
-            long left = sx - d
-            long right = sx + d
-            if (idxLine == 6) printf("[%d;%d] => [%d;%d]%n", left, sy, right, sy)
-            land.add(coord(left, sy)..coord(right, sy))
-            for (y in 1..d) {
-                long bottom = sy + y
-                long top = sy - y
-                if (idxLine == 6) printf("[%d;%d] => [%d;%d]%n", left + y, bottom, right - y, bottom)
-                land.add(coord(left + y, bottom)..coord(right - y, bottom))
-                if (idxLine == 6) printf("[%d;%d] => [%d;%d]%n", left + y, top, right - y, top)
-                land.add(coord(left + y, top)..coord(right - y, top))
-            }
+
+            sensors << new Sensor(sx, sy, d)
+        } else {
+            println(line)
+            System.exit(1)
         }
         idxLine++
     }
 }
-c = 0
-while (c < 4_000_000) {
-    def find = land.ranges.find { it.containsWithinBounds(c) }
-    if (find) {
-        c = find.getTo() + 1
-    } else {
-        def start = rcoord(c)
-        printf("[%d;%d] => %d%n", start[0], start[1], c)
+
+for (long y in 0..4_000_000L) {
+    def land = new LandP2()
+    for (sensor in sensors) {
+        long dy = abs(sensor.y() - y)
+        if (dy > sensor.d()) continue
+
+        long left = sensor.x() - (sensor.d() - dy)
+        long right = sensor.x() + (sensor.d() - dy)
+        land.add(left..right)
+    }
+    long x = searchX(land)
+    if (x < 4_000_000L) {
+        printf("y=%d x=%s %d%n", y, x, x * 4_000_000 + y)
+        println(Duration.between(startProg, Instant.now()))
+        System.exit(0)
     }
 }
-long expected = 13_081_194_638_237
-def exp = rcoord(expected)
-printf("[%d;%d] => %d%n", exp[0], exp[1], expected)
-for (r in land.ranges) {
-    def begin = rcoord(r.getFrom())
-    def end = rcoord(r.getTo())
-    printf("from [%d;%d] => [%d;%d]%n", begin[0], begin[1], end[0], end[1])
+
+System.exit(1)
+
+@CompileStatic
+private static long searchX(LandP2 land) {
+    long x = 0
+    Range<Long> find
+    do {
+        find = land.ranges.find { it.containsWithinBounds(x) }
+        if (find) {
+            x = find.to + 1
+        }
+    } while (find)
+    x
 }
-//3_270_298
-//2_638_237
-println(Duration.between(startProg, Instant.now()))
