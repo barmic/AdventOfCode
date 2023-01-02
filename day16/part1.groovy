@@ -1,3 +1,4 @@
+import groovy.transform.Canonical
 import groovy.transform.CompileStatic
 
 import java.util.regex.Matcher
@@ -5,33 +6,23 @@ import java.util.regex.Pattern
 
 @CompileStatic
 record Node(String id, int flow, List<String> leads) {}
-
-Map<String, Node> nodes = readInput('example')
-
-Node here = Objects.requireNonNull(nodes['AA'])
-Set<Node> opened = []
-int countdown = 30
-
-flowed = 0
-
-while (countdown > 0) {
-    if (!opened.contains(here) && here.flow() > 0) {
-        opened << here
-        flowed += here.flow() * countdown
-        printf("[%d] Open %s flowed:%d%n", countdown, here, flowed)
-    } else {
-        Node next = here.leads
-                .collect { Objects.requireNonNull(nodes[it]) }
-                .sort { n1, n2 -> opened.contains(n1) <=> opened.contains(n2) ?: n1.flow() <=> n2.flow() }
-                .reverse()
-                .head()
-        printf("[%d] From %s → %s%n", countdown, here.id(), next)
-        here = Objects.requireNonNull(next)
-    }
-    --countdown
+@Canonical
+class Step {
+    String id
+    boolean opening = false
+    long flowed = 0
+    Step next = null
 }
 
-printf("%d%n", flowed)
+final Map<String, Node> nodes = readInput('example')
+
+Step flowed = walk(nodes, nodes['AA'], [] as Set<Node>, 5)
+
+while (flowed) {
+    printf("%s %d\t%s%n", flowed.id, flowed.flowed, flowed.opening)
+    flowed = flowed.next
+}
+
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -54,4 +45,29 @@ private static Map<String, Node> readInput(String inputFile) {
         }
     }
     nodes
+}
+
+@CompileStatic
+private static Step walk(Map<String, Node> nodes, Node here, Set<Node> opened = [], int countdown = 30) {
+    if (countdown <= 0) return null
+//    long flowed = 0
+    int increment = 1
+    def newOpened = opened
+    Step hereStep = new Step(id: here.id())
+    if (!opened.contains(here) && here.flow() > 0) {
+        hereStep.opening = true
+        hereStep.flowed += here.flow() * countdown
+        newOpened += here
+//        flowed += here.flow() * countdown
+        increment += 1
+    }
+    List<Step> max = []
+    for (next in here.leads()) {
+        def current = walk(nodes, nodes[next], newOpened, countdown - increment)
+        if (current) {
+            max << current
+        }
+    }
+    hereStep.next = max.max {it.flowed}
+    hereStep
 }
