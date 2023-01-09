@@ -1,32 +1,22 @@
 import groovy.transform.Canonical
 import groovy.transform.CompileStatic
 
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.RecursiveTask
-import java.util.function.Function
 import java.util.regex.Matcher
 import java.util.regex.Pattern
-import java.util.stream.Collectors
 
 @CompileStatic
 record Node(String id, int flow, Set<String> leads) {}
 
-@CompileStatic
-record Valve(String id, int flow, Map<String, Integer> leads) {}
+def start = Instant.now()
+Walker.valves = readInput('input')
 
-Map<String, Node> nodes = readInput('exampleA')
+Result flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
 
-Walker.valves = [:]
-for (entry in nodes.entrySet()) {
-    def map = walk(nodes, entry.key)
-    Walker.valves[entry.key] = new Valve(entry.key, nodes[entry.key].flow(), map)
-}
-
-Walker.valves.each {printf("%s -> %s%n", it.key, String.join(";", it.value.leads().collect {it as String}))}
-
-def flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['A']))
-
-printf("%d%n", flowed)
+printf("%s (%s)%n", flowed, Duration.between(start, Instant.now()))
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -36,12 +26,12 @@ private static Map<String, Node> readInput(String inputFile) {
     try (Scanner sc = new Scanner(new File(inputFile))) {
         Pattern pattern = Pattern.compile("Valve (\\w+) has flow rate=(\\d+); tunnel(?:s)? lead(?:s)? to valve(?:s)? (.*)")
         while (sc.hasNextLine()) {
-            def line = sc.nextLine()
+            String line = sc.nextLine()
             Matcher matcher = pattern.matcher(line)
             if (matcher.find()) {
                 String id = matcher.group(1)
                 int flow = matcher.group(2) as Integer
-                def leads = matcher.group(3).split("[, ]+") as Set<String>
+                Set<String> leads = matcher.group(3).split("[, ]+") as Set<String>
                 nodes[id] = new Node(id, flow, leads)
             } else {
                 throw new RuntimeException("Impossible to parse $line")
@@ -51,64 +41,92 @@ private static Map<String, Node> readInput(String inputFile) {
     nodes
 }
 
+@CompileStatic
+record Result(long value, String path, List<Long> parts = []) implements Comparable<Result> {
+    @Override
+    int compareTo(Result o) {
+        return Long.compare(value, o.value)
+    }
+
+    Result add(Result o) {
+        o == null ? this : new Result(value + o.value, path + o.path, parts + o.parts)
+    }
+}
+
 @Canonical
 @CompileStatic
-class Walker extends RecursiveTask<Long> {
-    public static Map<String, Valve> valves
-    final Valve here
-    Set<Valve> opened = []
+class Walker extends RecursiveTask<Result> {
+    public static Map<String, Node> valves
+    final Node here
+    Set<Node> opened = []
     int countdown = 30
 
-    static Walker of(Valve here) {
-        Set<Valve> opened = valves.values().findAll { it.flow() <= 0 } as Set<Valve>
+    static Walker of(Node here) {
+        Set<Node> opened = valves.values().findAll { it.flow() <= 0 } as Set<Node>
         return new Walker(here, opened)
     }
 
-    protected Long compute() {
+    protected Result compute() {
         int cost = 0
-        def newOpened = new HashSet(opened)
+        Set<Node> newOpened = new HashSet<Node>(opened)
         long flowed = 0L
+
+        def hereResult = new Result(flowed, here.id(), [flowed])
         if (!newOpened.contains(here) && here.flow() > 0) {
             newOpened << here
             cost += 1
             flowed += here.flow() * (countdown - 1)
+            hereResult = new Result(flowed, here.id(), [flowed])
             if ((valves.keySet() - newOpened).isEmpty()) {
-                return flowed
+                return hereResult
             }
         }
-        Map<Valve, RecursiveTask<Long>> subPath = [:]
-        for (final def next in here.leads) {
-            Valve nextValve = valves[next.key]
+        Map<String, Integer> leads = walk(valves, here.id, newOpened.collect { it.id() } as Set<String>)
+        if (leads.isEmpty()) {
+            return hereResult
+        }
+
+        Collection<RecursiveTask<Result>> subPath = []
+        for (Map.Entry<String, Integer> next in leads) {
+            Node nextValve = valves[next.key]
             if (countdown - next.value - cost > 0) {
-                subPath[nextValve] = new Walker(nextValve, newOpened, countdown - next.value - cost)
-                subPath[nextValve].fork()
+                subPath << new Walker(nextValve, newOpened, countdown - next.value - cost)
             }
         }
-
-        long sub = subPath.values().collect {it.join() ?: 0L}.max() ?: 0L
-        return flowed + sub
+        switch (subPath.size()) {
+            case 0 -> hereResult
+            case 1 -> hereResult.add(subPath.head().compute())
+            default -> hereResult.add(invokeAll(subPath).collect { it.join() }.max())
+        }
     }
-}
 
-static Map<String, Integer> walk(Map<String, Node> nodes, String id) {
-    Map<String, Integer> targets = new HashMap<>(nodes[id].leads().stream()
-            .collect(Collectors.toMap(Function.identity(), i -> 1)))
+    static Map<String, Integer> walk(Map<String, Node> nodes, String id, Set<String> opened) {
+        Map<String, Integer> targets = nodes[id].leads().collectEntries { [(it): 1] }
 
-    Set<String> passed = [id] as Set<String>
-    while (targets.keySet().find { nodes[it].flow() <= 0 }) {
-        for (target in new HashMap<>(targets)) {
-            Node nodeTarget = nodes[target.key]
-            if (nodeTarget.flow() <= 0) {
-                targets.remove(nodeTarget.id())
-                passed << nodeTarget.id()
-                for (next in nodeTarget.leads()) {
-                    if (!passed.contains(next)) {
-                        targets.compute(next, { k, v -> Math.min(v ?: Integer.MAX_VALUE, target.value + 1) })
-                    }
+        Set<String> passed = [id] as Set<String>
+        Set<String> previousKeys = [] as Set<String>
+        while (targets.keySet() - previousKeys) {
+            previousKeys = new HashSet<>(targets.keySet())
+            for (Map.Entry<String, Integer> target in new HashMap<>(targets)) {
+                Node nodeTarget = nodes[target.key]
+                if (nodeTarget.flow() <= 0 || opened.contains(target.key)) {
+                    targets.remove(nodeTarget.id())
                 }
+                passed << nodeTarget.id()
+                nodeTarget.leads()
+                        .findAll { !passed.contains(it)}
+                        .each {
+                            targets.compute(it, { k, v ->
+                                Math.min(
+                                        v ?: Integer.MAX_VALUE,
+                                        target.value + 1
+                                )
+                            })
+                        }
             }
         }
-    }
 
-    return targets
+        return targets
+    }
 }
+
