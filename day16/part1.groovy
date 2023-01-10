@@ -14,7 +14,7 @@ record Node(String id, int flow, Set<String> leads) {}
 def start = Instant.now()
 Walker.valves = readInput('input')
 
-Walker.entries = Walker.valves.values().findAll {it.id() == 'AA' || it.flow() > 0}.collectEntries { [(it.id()): walk(Walker.valves, it.id())] }
+Walker.entries = Walker.valves.values().findAll { it.id() == 'AA' || it.flow() > 0 }.collectEntries { [(it.id()): walk(Walker.valves, it.id())] }
 
 long flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
 
@@ -49,24 +49,25 @@ class Walker extends RecursiveTask<Long> {
     public static Map<String, Node> valves
     public static Map<String, Map<String, Integer>> entries
     final Node here
-    Set<Node> opened = []
+    Set<String> opened = []
     int countdown = 30
 
     static Walker of(Node here) {
-        Set<Node> opened = valves.values().findAll { it.flow() <= 0 } as Set<Node>
+        Set<String> opened = valves.values().findAll { it.flow() <= 0 }.collect{it.id()} as Set<String>
         return new Walker(here, opened)
     }
 
+    @CompileStatic
     protected Long compute() {
         int cost = 0
-        Set<Node> newOpened = new HashSet<Node>(opened)
+        Set<String> newOpened = new HashSet<String>(opened)
         long flowed = 0L
 
         if (!newOpened.contains(here) && here.flow() > 0) {
-            newOpened << here
+            newOpened << here.id()
             cost += 1
             flowed += here.flow() * (countdown - 1)
-            if ((valves.keySet() - newOpened).isEmpty()) {
+            if (valves.size() <= newOpened.size()) {
                 return flowed
             }
         }
