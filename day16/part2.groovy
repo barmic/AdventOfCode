@@ -14,7 +14,7 @@ record Node(String id, int flow, Set<String> leads) {}
 def start = Instant.now()
 Walker.valves = readInput('input')
 
-long flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
+Result flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
 
 printf("%s (%s)%n", flowed, Duration.between(start, Instant.now()))
 
@@ -41,9 +41,21 @@ private static Map<String, Node> readInput(String inputFile) {
     nodes
 }
 
+@CompileStatic
+record Result(long value, String path, List<Long> parts = []) implements Comparable<Result> {
+    @Override
+    int compareTo(Result o) {
+        return Long.compare(value, o.value)
+    }
+
+    Result add(Result o) {
+        o == null ? this : new Result(value + o.value, path + o.path, parts + o.parts)
+    }
+}
+
 @Canonical
 @CompileStatic
-class Walker extends RecursiveTask<Long> {
+class Walker extends RecursiveTask<Result> {
     public static Map<String, Node> valves
     final Node here
     Set<Node> opened = []
@@ -54,25 +66,27 @@ class Walker extends RecursiveTask<Long> {
         return new Walker(here, opened)
     }
 
-    protected Long compute() {
+    protected Result compute() {
         int cost = 0
         Set<Node> newOpened = new HashSet<Node>(opened)
         long flowed = 0L
 
+        def hereResult = new Result(flowed, here.id(), [flowed])
         if (!newOpened.contains(here) && here.flow() > 0) {
             newOpened << here
             cost += 1
             flowed += here.flow() * (countdown - 1)
+            hereResult = new Result(flowed, here.id(), [flowed])
             if ((valves.keySet() - newOpened).isEmpty()) {
-                return flowed
+                return hereResult
             }
         }
         Map<String, Integer> leads = walk(valves, here.id, newOpened.collect { it.id() } as Set<String>)
         if (leads.isEmpty()) {
-            return flowed
+            return hereResult
         }
 
-        Collection<RecursiveTask<Long>> subPath = []
+        Collection<RecursiveTask<Result>> subPath = []
         for (Map.Entry<String, Integer> next in leads) {
             Node nextValve = valves[next.key]
             if (countdown - next.value - cost > 0) {
@@ -80,9 +94,9 @@ class Walker extends RecursiveTask<Long> {
             }
         }
         switch (subPath.size()) {
-            case 0 -> flowed
-            case 1 -> flowed + subPath.head().compute()
-            default -> flowed + invokeAll(subPath).collect { it.join() }.max()
+            case 0 -> hereResult
+            case 1 -> hereResult.add(subPath.head().compute())
+            default -> hereResult.add(invokeAll(subPath).collect { it.join() }.max())
         }
     }
 
