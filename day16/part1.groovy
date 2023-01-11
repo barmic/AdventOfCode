@@ -14,7 +14,9 @@ record Node(String id, int flow, Set<String> leads) {}
 def start = Instant.now()
 Walker.valves = readInput('input')
 
-Walker.entries = Walker.valves.values().findAll { it.id() == 'AA' || it.flow() > 0 }.collectEntries { [(it.id()): walk(Walker.valves, it.id())] }
+Walker.entries = Walker.valves.values()
+        .findAll { it.id() == 'AA' || it.flow() > 0 }
+        .collectEntries { [(it.id()): walk(Walker.valves, it.id())] }
 
 long flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
 
@@ -28,15 +30,12 @@ private static Map<String, Node> readInput(String inputFile) {
     try (Scanner sc = new Scanner(new File(inputFile))) {
         Pattern pattern = Pattern.compile("Valve (\\w+) has flow rate=(\\d+); tunnel(?:s)? lead(?:s)? to valve(?:s)? (.*)")
         while (sc.hasNextLine()) {
-            String line = sc.nextLine()
-            Matcher matcher = pattern.matcher(line)
+            Matcher matcher = pattern.matcher(sc.nextLine())
             if (matcher.find()) {
                 String id = matcher.group(1)
                 int flow = matcher.group(2) as Integer
                 Set<String> leads = matcher.group(3).split("[, ]+") as Set<String>
                 nodes[id] = new Node(id, flow, leads)
-            } else {
-                throw new RuntimeException("Impossible to parse $line")
             }
         }
     }
@@ -53,19 +52,17 @@ class Walker extends RecursiveTask<Long> {
     int countdown = 30
 
     static Walker of(Node here) {
-        Set<String> opened = valves.values().findAll { it.flow() <= 0 }.collect{it.id()} as Set<String>
+        Set<String> opened = valves.values().findAll {it.flow() <= 0}.collect{it.id()} as Set<String>
         return new Walker(here, opened)
     }
 
     @CompileStatic
     protected Long compute() {
-        int cost = 0
         Set<String> newOpened = new HashSet<String>(opened)
         long flowed = 0L
 
         if (!newOpened.contains(here) && here.flow() > 0) {
             newOpened << here.id()
-            cost += 1
             flowed += here.flow() * (countdown - 1)
             if (valves.size() <= newOpened.size()) {
                 return flowed
@@ -78,6 +75,7 @@ class Walker extends RecursiveTask<Long> {
         }
 
         Collection<RecursiveTask<Long>> subPath = []
+        int cost = newOpened.size() - opened.size()
         for (Map.Entry<String, Integer> next in leads) {
             Node nextValve = valves[next.key]
             if (countdown - next.value - cost > 0) {
@@ -87,11 +85,12 @@ class Walker extends RecursiveTask<Long> {
         switch (subPath.size()) {
             case 0 -> flowed
             case 1 -> flowed + subPath.head().compute()
-            default -> flowed + invokeAll(subPath).collect { it.join() }.max()
+            default -> flowed + invokeAll(subPath).collect { it.join()}.max()
         }
     }
 }
 
+@CompileStatic
 static Map<String, Integer> walk(Map<String, Node> nodes, String id) {
     Map<String, Integer> targets = nodes[id].leads().collectEntries { [(it): 1] }
 
@@ -106,18 +105,9 @@ static Map<String, Integer> walk(Map<String, Node> nodes, String id) {
             }
             passed << nodeTarget.id()
             nodeTarget.leads()
-                    .findAll { !passed.contains(it) }
-                    .each {
-                        targets.compute(it, { k, v ->
-                            Math.min(
-                                    v ?: Integer.MAX_VALUE,
-                                    target.value + 1
-                            )
-                        })
-                    }
+                    .findAll {!passed.contains(it) && targets.get(it, Integer.MAX_VALUE) > target.value + 1}
+                    .each {targets[it] = target.value + 1}
         }
     }
-
     return targets
 }
-

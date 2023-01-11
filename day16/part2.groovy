@@ -12,9 +12,11 @@ import java.util.regex.Pattern
 record Node(String id, int flow, Set<String> leads) {}
 
 def start = Instant.now()
-Walker.valves = readInput('input')
+Walker.valves = readInput('example')
 
-Result flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
+Walker.entries = Walker.valves.values().findAll { it.id() == 'AA' || it.flow() > 0 }.collectEntries { [(it.id()): walk(Walker.valves, it.id())] }
+
+long flowed = ForkJoinPool.commonPool().invoke(Walker.of(Walker.valves['AA']))
 
 printf("%s (%s)%n", flowed, Duration.between(start, Instant.now()))
 
@@ -41,92 +43,77 @@ private static Map<String, Node> readInput(String inputFile) {
     nodes
 }
 
-@CompileStatic
-record Result(long value, String path, List<Long> parts = []) implements Comparable<Result> {
-    @Override
-    int compareTo(Result o) {
-        return Long.compare(value, o.value)
-    }
-
-    Result add(Result o) {
-        o == null ? this : new Result(value + o.value, path + o.path, parts + o.parts)
-    }
-}
-
 @Canonical
 @CompileStatic
-class Walker extends RecursiveTask<Result> {
+class Walker extends RecursiveTask<Long> {
     public static Map<String, Node> valves
-    final Node here
-    Set<Node> opened = []
-    int countdown = 30
+    public static Map<String, Map<String, Integer>> entries
+    final Node me
+    final Node elephant
+    Set<String> opened = []
+    int countdown = 26
 
     static Walker of(Node here) {
-        Set<Node> opened = valves.values().findAll { it.flow() <= 0 } as Set<Node>
-        return new Walker(here, opened)
+        Set<String> opened = valves.values().findAll { it.flow() <= 0 }.collect{it.id()} as Set<String>
+        return new Walker(here, here, opened)
     }
 
-    protected Result compute() {
-        int cost = 0
-        Set<Node> newOpened = new HashSet<Node>(opened)
+    @CompileStatic
+    protected Long compute() {
+        Set<String> newOpened = new HashSet<String>(opened)
         long flowed = 0L
 
-        def hereResult = new Result(flowed, here.id(), [flowed])
-        if (!newOpened.contains(here) && here.flow() > 0) {
-            newOpened << here
-            cost += 1
-            flowed += here.flow() * (countdown - 1)
-            hereResult = new Result(flowed, here.id(), [flowed])
-            if ((valves.keySet() - newOpened).isEmpty()) {
-                return hereResult
+        for (final def here in [me, elephant]) {
+            if (!newOpened.contains(here) && here.flow() > 0) {
+                newOpened << here.id()
+                flowed += here.flow() * (countdown - 1)
+                if (valves.size() <= newOpened.size()) {
+                    return flowed
+                }
             }
         }
-        Map<String, Integer> leads = walk(valves, here.id, newOpened.collect { it.id() } as Set<String>)
-        if (leads.isEmpty()) {
-            return hereResult
+        Map<String, Integer> myLeads = entries[me.id()]
+                .findAll { !newOpened.contains(it.key) && valves[it.key].flow() > 0 }
+        Map<String, Integer> elephantLeads = entries[elephant.id()]
+                .findAll { !newOpened.contains(it.key) && valves[it.key].flow() > 0 }
+        if (myLeads.isEmpty() && elephantLeads.isEmpty()) {
+            return flowed
         }
 
-        Collection<RecursiveTask<Result>> subPath = []
-        for (Map.Entry<String, Integer> next in leads) {
-            Node nextValve = valves[next.key]
-            if (countdown - next.value - cost > 0) {
-                subPath << new Walker(nextValve, newOpened, countdown - next.value - cost)
+        Collection<RecursiveTask<Long>> subPath = []
+        int cost = newOpened.size() - opened.size()
+        for (Map.Entry<String, Integer> myNext in myLeads.findAll {it.value < (countdown - cost)}) {
+            for (Map.Entry<String, Integer> elephantNext in elephantLeads.findAll {it.value < (countdown - cost)}) {
+                subPath << new Walker(valves[myNext.key], valves[elephantNext.key], newOpened, countdown - myNext.value - cost)
             }
         }
         switch (subPath.size()) {
-            case 0 -> hereResult
-            case 1 -> hereResult.add(subPath.head().compute())
-            default -> hereResult.add(invokeAll(subPath).collect { it.join() }.max())
+            case 0 -> flowed
+            case 1 -> flowed + subPath.head().compute()
+            default -> flowed + invokeAll(subPath).collect { it.join() }.max()
         }
     }
+}
 
-    static Map<String, Integer> walk(Map<String, Node> nodes, String id, Set<String> opened) {
-        Map<String, Integer> targets = nodes[id].leads().collectEntries { [(it): 1] }
+static Map<String, Integer> walk(Map<String, Node> nodes, String id) {
+    Map<String, Integer> targets = nodes[id].leads().collectEntries { [(it): 1] }
 
-        Set<String> passed = [id] as Set<String>
-        Set<String> previousKeys = [] as Set<String>
-        while (targets.keySet() - previousKeys) {
-            previousKeys = new HashSet<>(targets.keySet())
-            for (Map.Entry<String, Integer> target in new HashMap<>(targets)) {
-                Node nodeTarget = nodes[target.key]
-                if (nodeTarget.flow() <= 0 || opened.contains(target.key)) {
-                    targets.remove(nodeTarget.id())
-                }
-                passed << nodeTarget.id()
-                nodeTarget.leads()
-                        .findAll { !passed.contains(it)}
-                        .each {
-                            targets.compute(it, { k, v ->
-                                Math.min(
-                                        v ?: Integer.MAX_VALUE,
-                                        target.value + 1
-                                )
-                            })
-                        }
+    Set<String> passed = [id] as Set<String>
+    Set<String> previousKeys = [] as Set<String>
+    while (targets.keySet() - previousKeys) {
+        previousKeys = new HashSet<>(targets.keySet())
+        for (Map.Entry<String, Integer> target in new HashMap<>(targets)) {
+            Node nodeTarget = nodes[target.key]
+            if (nodeTarget.flow() <= 0) {
+                targets.remove(nodeTarget.id())
             }
+            passed << nodeTarget.id()
+            nodeTarget.leads()
+                    .findAll { !passed.contains(it) && targets.get(it, Integer.MAX_VALUE) > targets + 1}
+                    .each {targets[it] = target.value + 1}
         }
-
-        return targets
     }
+
+    return targets
 }
 
