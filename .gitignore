@@ -3,3 +3,5 @@
 out
 *.iml
 node_modules
+*.lock
+target
