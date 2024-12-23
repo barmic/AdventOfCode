@@ -1,17 +1,29 @@
 #!/usr/bin/env julia
 
+function div(x, y)
+    r = x / y
+    return isinteger(r) ? r : -1
+end
+
 function validate(target, data)
-    heads = [0]
-    i = 1
-    while length(heads) > 0 && i <= length(data)
-        heads = vcat([ [head * data[i], head + data[i]] for head in heads ]...)
-        i += 1
+    heads = [target]
+    i = length(data)
+    while length(heads) > 0 && i > 0
+        newHeads = Int[]
+        for head in heads
+            r1 = div(head, data[i])
+            if isinteger(r1)
+                push!(newHeads, r1)
+            end
+            r2 = head - data[i]
+            if r2 >= 0
+                push!(newHeads, r2)
+            end
+        end
+        heads = newHeads
+        i -= 1
     end
-    if target in heads
-        return target
-    else
-        return 0
-    end
+    return i == 0 && 0 in heads ? target : 0
 end
 
 function parseLine(line)
@@ -19,5 +31,11 @@ function parseLine(line)
     return (ints[1], ints[2:length(ints)])
 end
 
-r = sum(map(a -> validate(a[1], a[2]), map(l -> parseLine(l), readlines(ARGS[1]))))
-println(r)
+lines = [parseLine(line) for line in readlines(ARGS[1])]
+
+@time sum(map(a -> validate(a[1], a[2]), lines))
+@time sum(map(a -> validate(a[1], a[2]), lines))
+@time sum(map(a -> validate(a[1], a[2]), lines))
+
+opti = map(a -> validate(a[1], a[2]), lines)
+println(sum(opti))
