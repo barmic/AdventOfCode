@@ -3,3 +3,8 @@
 out
 *.iml
 node_modules
+*.lock
+target
+.idea
+out
+*.iml
