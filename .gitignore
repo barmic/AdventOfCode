@@ -5,6 +5,4 @@ out
 node_modules
 *.lock
 target
-.idea
-out
-*.iml
+build
