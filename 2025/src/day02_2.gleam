@@ -56,7 +56,7 @@ pub fn duplicate(a: Int, times: Int) -> Int {
 }
 
 fn pow(a: Int, p: Int) -> Int {
-  float.truncate(int.power(a, int.to_float(p)) |> result.unwrap(0.))
+  int.power(a, int.to_float(p)) |> result.unwrap(0.) |> float.truncate
 }
 
 pub fn generate(a: Range, digits: Int, dups: Int) -> List(Int) {
